@@ -1,0 +1,17 @@
+{
+  "name": "hallpass",
+  "version": "0.1.0",
+  "description": "A classroom hall pass board: students tap out and back in on a shared iPad, the teacher watches from her own device.",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test test/"
+  },
+  "engines": { "node": ">=20" },
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}
