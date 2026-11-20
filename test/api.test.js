@@ -44,11 +44,12 @@ const stranger = device();
 
 test('teacher signs up and gets a room with default places', async () => {
   const r = await teacher('POST', '/api/signup', {
-    name: 'Ms. Carter', roomName: 'Room 14', email: 'carter@school.test', password: 'pencils123',
+    name: 'Ms. Carter', roomName: 'Room 14', password: 'pencils123',
   });
   assert.equal(r.status, 200, r.text);
   assert.equal(r.json.teacher.roomName, 'Room 14');
   assert.ok(!('passHash' in r.json.teacher), 'password hash must not leak');
+  assert.ok(!('email' in r.json.teacher), 'no email anywhere');
 
   const s = await teacher('GET', '/api/state');
   assert.equal(s.status, 200);
@@ -58,15 +59,31 @@ test('teacher signs up and gets a room with default places', async () => {
   assert.match(s.json.teacher.roomCode, /^[A-Z2-9]{6}$/);
 });
 
-test('signup rejects a reused email and a short password', async () => {
-  const dup = await stranger('POST', '/api/signup', {
-    name: 'X', roomName: 'Y', email: 'carter@school.test', password: 'pencils123',
-  });
-  assert.equal(dup.status, 409);
-  const short = await stranger('POST', '/api/signup', {
-    name: 'X', roomName: 'Y', email: 'x@school.test', password: '123',
-  });
+test('signup rejects a name that is taken and a short password', async () => {
+  const dup = await stranger('POST', '/api/signup', { name: '  ms. carter ', password: 'pencils123' });
+  assert.equal(dup.status, 409, 'same name, different capitals and spaces');
+  assert.match(dup.json.error, /name/i);
+  const short = await stranger('POST', '/api/signup', { name: 'X', password: '123' });
   assert.equal(short.status, 400);
+  assert.equal((await stranger('POST', '/api/signup', { password: 'pencils123' })).status, 400, 'a name is needed');
+});
+
+test('signing up takes only a name and a password; the room gets a name you can change later', async () => {
+  const lee = device();
+  const r = await lee('POST', '/api/signup', { name: 'Mr. Lee', password: 'markers456' });
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.json.teacher.roomName, "Mr. Lee's room");
+
+  // a teacher cannot rename herself into a name someone else signs in with
+  assert.equal((await lee('PATCH', '/api/settings', { name: 'MS. CARTER' })).status, 409);
+  assert.equal((await lee('PATCH', '/api/settings', { name: 'Mr. Lee' })).status, 200, 'keeping your own name is fine');
+
+  // two teachers, two passwords: each name signs in to its own room
+  const again = device();
+  assert.equal((await again('POST', '/api/login', { name: 'mr. lee', password: 'pencils123' })).status, 401);
+  const ok = await again('POST', '/api/login', { name: 'mr. lee', password: 'markers456' });
+  assert.equal(ok.status, 200, ok.text);
+  assert.equal(ok.json.teacher.name, 'Mr. Lee');
 });
 
 test('state and mutations need a teacher session', async () => {
@@ -265,9 +282,9 @@ test('update notes: a new account has nothing to catch up on, an older one sees 
 test('logout then login works and data survived', async () => {
   assert.equal((await teacher('POST', '/api/logout')).status, 200);
   assert.equal((await teacher('GET', '/api/state')).status, 401);
-  const wrong = await teacher('POST', '/api/login', { email: 'carter@school.test', password: 'nope' });
+  const wrong = await teacher('POST', '/api/login', { name: 'Ms. Carter', password: 'nope' });
   assert.equal(wrong.status, 401);
-  const ok = await teacher('POST', '/api/login', { email: 'CARTER@school.test', password: 'pencils123' });
+  const ok = await teacher('POST', '/api/login', { name: 'MS. CARTER', password: 'pencils123' });
   assert.equal(ok.status, 200, ok.text);
   const s = await teacher('GET', '/api/state');
   assert.equal(s.json.teacher.chime, false);
@@ -308,7 +325,7 @@ async function teacherCookie() {
   const res = await fetch(base + '/api/login', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ email: 'carter@school.test', password: 'pencils123' }),
+    body: JSON.stringify({ name: 'Ms. Carter', password: 'pencils123' }),
   });
   return res.headers.get('set-cookie').split(';')[0];
 }
@@ -317,7 +334,7 @@ test('a signed-in teacher can open the iPad screen without signing out or typing
   assert.equal((await stranger('POST', '/api/kiosk/open')).status, 401, 'needs a teacher sign-in');
 
   const laptop = device();
-  assert.equal((await laptop('POST', '/api/login', { email: 'carter@school.test', password: 'pencils123' })).status, 200);
+  assert.equal((await laptop('POST', '/api/login', { name: 'Ms. Carter', password: 'pencils123' })).status, 200);
   const before = (await teacher('GET', '/api/state')).json;
 
   // the jar keeps the newest cookie, so after this the laptop only holds the iPad sign-in

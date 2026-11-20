@@ -115,23 +115,28 @@ export function createApp({ dataFile, store = openStore(dataFile) }) {
     return timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(teacher.passHash, 'hex'));
   }
   const publicTeacher = (t) => ({
-    id: t.id, name: t.name, roomName: t.roomName, email: t.email,
+    id: t.id, name: t.name, roomName: t.roomName,
     roomCode: t.roomCode, chime: t.chime,
     exitCode: t.exitCode || '',
   });
 
   // ---- teacher accounts -------------------------------------------------
+  // The name is what a teacher signs in with, so capitals and extra spaces don't count.
+  const sameName = (s) => s.trim().replace(/\s+/g, ' ').toLowerCase();
+  const nameTaken = (name, except) => db.teachers.some((t) => t !== except && sameName(t.name) === sameName(name));
+  const NAME_TAKEN = 'Another teacher already uses that name. Add something to make it yours, like "Ms. Carter, Room 14".';
+
   app.post('/api/signup', (req, res) => {
-    const name = str(req.body.name), roomName = str(req.body.roomName);
-    const email = str(req.body.email).toLowerCase(), password = String(req.body.password ?? '');
-    if (!name || !roomName || !email) return fail(res, 400, 'Name, room name and email are all needed.');
-    if (!/^[^@\s]+@[^@\s]+$/.test(email)) return fail(res, 400, 'That email does not look right.');
+    // No email: a teacher signs in with the name her students see, plus a password.
+    const name = str(req.body.name), password = String(req.body.password ?? '');
+    const roomName = str(req.body.roomName) || `${name}'s room`; // changeable in Settings
+    if (!name) return fail(res, 400, 'Type the name your students see.');
     if (password.length < 8) return fail(res, 400, 'Password needs at least 8 characters.');
-    if (db.teachers.some((t) => t.email === email)) return fail(res, 409, 'There is already an account with that email.');
+    if (nameTaken(name)) return fail(res, 409, NAME_TAKEN);
 
     const { salt, hash } = hashPassword(password);
     const teacher = {
-      id: newId(), name, roomName, email, salt, passHash: hash,
+      id: newId(), name, roomName, salt, passHash: hash,
       roomCode: uniqueRoomCode(), chime: true, createdAt: Date.now(),
       seenUpdate: CURRENT, // a brand-new account has nothing to catch up on
     };
@@ -142,11 +147,11 @@ export function createApp({ dataFile, store = openStore(dataFile) }) {
   });
 
   app.post('/api/login', (req, res) => {
-    const email = str(req.body.email).toLowerCase();
-    const teacher = db.teachers.find((t) => t.email === email);
-    if (!teacher || !checkPassword(teacher, String(req.body.password ?? ''))) {
-      return fail(res, 401, 'Wrong email or password.');
-    }
+    // Accounts made before names had to be unique could share one, so try each match.
+    const key = sameName(str(req.body.name)), password = String(req.body.password ?? '');
+    const teacher = db.teachers.find((t) => sameName(t.name) === key && checkPassword(t, password));
+    if (!teacher) return fail(res, 401, 'Wrong name or password.');
+    delete teacher.email; // left over from when sign-in used an email; nothing uses it
     setSession(res, 'teacher', teacher.id);
     res.json({ teacher: publicTeacher(teacher) });
   });
@@ -243,7 +248,12 @@ export function createApp({ dataFile, store = openStore(dataFile) }) {
       t.seenUpdate = b.seenUpdate;
     }
     if ('roomName' in b) { const v = str(b.roomName); if (!v) return fail(res, 400, 'Room name cannot be empty.'); t.roomName = v; }
-    if ('name' in b) { const v = str(b.name); if (!v) return fail(res, 400, 'Name cannot be empty.'); t.name = v; }
+    if ('name' in b) {
+      const v = str(b.name);
+      if (!v) return fail(res, 400, 'Name cannot be empty.');
+      if (nameTaken(v, t)) return fail(res, 409, NAME_TAKEN);
+      t.name = v;
+    }
     save(); broadcast(t.id);
     res.json({ teacher: publicTeacher(t) });
   });

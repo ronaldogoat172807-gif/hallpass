@@ -51,7 +51,7 @@ async function instance(env = { url: redisUrl, token: 'test-token' }) {
 test('data and sign-ins survive landing on a different copy of the server', async () => {
   const a = await instance();
   const signup = await a('POST', '/api/signup', {
-    name: 'Ms. Carter', roomName: 'Room 14', email: 'carter@school.test', password: 'pencils123',
+    name: 'Ms. Carter', roomName: 'Room 14', password: 'pencils123',
   });
   assert.equal(signup.status, 200, signup.text);
   assert.equal((await a('POST', '/api/students', { name: 'Chris' }, signup.cookie)).status, 200);
@@ -70,7 +70,7 @@ test('data and sign-ins survive landing on a different copy of the server', asyn
 
 test('many changes at once on one server all get saved', async () => {
   const a = await instance();
-  const login = await a('POST', '/api/login', { email: 'carter@school.test', password: 'pencils123' });
+  const login = await a('POST', '/api/login', { name: 'Ms. Carter', password: 'pencils123' });
   const names = ['Ava', 'Ben', 'Cy', 'Dee', 'Eli', 'Fay'];
   const results = await Promise.all(names.map((name) => a('POST', '/api/students', { name }, login.cookie)));
   assert.deepEqual(results.map((r) => r.status), names.map(() => 200));
@@ -80,13 +80,13 @@ test('many changes at once on one server all get saved', async () => {
 
 test('hosted mode has no live stream, so screens fall back to checking every few seconds', async () => {
   const a = await instance();
-  const login = await a('POST', '/api/login', { email: 'carter@school.test', password: 'pencils123' });
+  const login = await a('POST', '/api/login', { name: 'Ms. Carter', password: 'pencils123' });
   assert.equal((await a('GET', '/api/events', undefined, login.cookie)).status, 204);
 });
 
 test('a missing database gives a clear message instead of a crash', async () => {
   const a = await instance({ url: '', token: '' });
-  const r = await a('POST', '/api/signup', { name: 'A', roomName: 'B', email: 'a@b.test', password: 'pencils123' });
+  const r = await a('POST', '/api/signup', { name: 'A', password: 'pencils123' });
   assert.equal(r.status, 503);
   assert.match(r.json.error, /database/i);
 });

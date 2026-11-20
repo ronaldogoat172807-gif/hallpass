@@ -23,16 +23,14 @@
       </div>
 
       <form id="login">
-        <div class="field"><label>Email</label><input class="input" name="email" type="email" autocomplete="email" required></div>
+        <div class="field"><label>Your name (how students see it)</label><input class="input" name="name" placeholder="Ms. Carter" autocomplete="username" required></div>
         <div class="field"><label>Password</label><input class="input" name="password" type="password" autocomplete="current-password" required></div>
         <div class="error" id="login-error"></div>
         <button class="btn solid" type="submit">Sign in</button>
       </form>
 
       <form id="signup" hidden>
-        <div class="field"><label>Your name (how students see it)</label><input class="input" name="name" placeholder="Ms. Carter" required></div>
-        <div class="field"><label>Room name</label><input class="input" name="roomName" placeholder="Room 14" required></div>
-        <div class="field"><label>Email</label><input class="input" name="email" type="email" autocomplete="email" required></div>
+        <div class="field"><label>Your name (how students see it)</label><input class="input" name="name" placeholder="Ms. Carter" autocomplete="username" required></div>
         <div class="field"><label>Password (8+ characters)</label><input class="input" name="password" type="password" autocomplete="new-password" minlength="8" required></div>
         <div class="error" id="signup-error"></div>
         <button class="btn solid" type="submit">Create my room</button>
@@ -50,7 +48,7 @@
     </section>
   </div>
 
-  <div class="foot"><span>Claude was used in this project.</span><span>v0.3</span></div>
+  <div class="foot"><span>Claude was used in this project.</span><span>v0.4</span></div>
 </div>
 
 <script type="module">

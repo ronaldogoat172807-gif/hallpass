@@ -21,7 +21,8 @@ npm start
 
 Then open http://localhost:3000.
 
-1. **Teacher:** click *Create account*, fill in your name, room name, email, password.
+1. **Teacher:** click *Create account*, type the name your students see and a password.
+   No email. You sign in with that same name.
 2. Go to **Settings** and copy the 6-letter room code.
 3. **iPad / spare computer:** open the same address, type the room code, tap *Join room*.
    It stays joined after that.
@@ -35,7 +36,7 @@ and the iPad screen in a private/incognito window so they have separate sign-ins
 
 The local data file already has a demo room you can poke at:
 
-- email `demo@hallpass.local`, password `chalkboard`
+- name `Ms. Carter`, password `chalkboard`
 - room code is shown on its Settings page
 
 Delete `data/db.json` to start fresh.
