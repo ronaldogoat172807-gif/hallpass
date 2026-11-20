@@ -60,9 +60,12 @@
       <div class="label">Add a place</div>
       <form class="row-form" id="add-place">
         <input class="input" name="name" placeholder="Counselor" autocomplete="off" required>
+        <input class="input mins" name="minutes" type="number" min="1" max="180" value="5" aria-label="Minutes allowed" required>
+        <span style="align-self:center">min</span>
         <button class="btn" type="submit">Add</button>
       </form>
-      <div class="label">Places students can go</div>
+      <div class="label">Places students can go · minutes allowed</div>
+      <p class="hint">Each place has its own time limit. A student out longer than that turns red, and a chime plays once. Change a number and it saves by itself.</p>
       <div class="list" id="places"></div>
     </section>
 
@@ -86,14 +89,6 @@
         <button class="btn" type="submit">Save</button>
       </form>
       <p class="hint">Typed on the iPad to leave the room, instead of your password. Leave it empty to require your password.</p>
-
-      <div class="label">Time limit</div>
-      <form class="row-form" id="limit" style="max-width:320px">
-        <input class="input" name="alertMinutes" type="number" min="1" max="180" required>
-        <span style="align-self:center">minutes</span>
-        <button class="btn" type="submit">Save</button>
-      </form>
-      <p class="hint">A student out longer than this turns red, and a chime plays once.</p>
 
       <div class="label">Chime</div>
       <label class="toggle"><input type="checkbox" id="chime"> Play a chime when someone goes over the limit</label>
@@ -130,7 +125,7 @@
 </div>
 
 <script type="module">
-  import { api, live, changed, elapsed, clock, tickClock, h, replace, toast, chime } from '/common.js';
+  import { api, live, changed, limitFor, elapsed, clock, tickClock, h, replace, toast, chime } from '/common.js';
 
   const $ = (id) => document.getElementById(id);
   tickClock($('clock'));
@@ -156,7 +151,7 @@
   }
 
   const name = (list, id, fallback = '?') => list.find((x) => x.id === id)?.name ?? fallback;
-  const isLate = (t, now) => t.inAt === null && now - t.outAt >= state.teacher.alertMinutes * 60000;
+  const isLate = (t, now) => t.inAt === null && now - t.outAt >= limitFor(t, state.places) * 60000;
 
   function render() {
     const { teacher, students, places, trips } = state;
@@ -177,7 +172,7 @@
       ? open.map((t) => h('div', { class: 'item' + (isLate(t, now) ? ' late' : ''), 'data-trip': t.id },
           h('span', {}, `${name(students, t.studentId)} → ${name(places, t.placeId, 'out')}`),
           h('span', { class: 'side' },
-            h('span', { class: 'meta' }, elapsed(t.outAt, now) + (isLate(t, now) ? ` · over ${teacher.alertMinutes} min` : '')),
+            h('span', { class: 'meta' }, elapsed(t.outAt, now) + (isLate(t, now) ? ` · over ${limitFor(t, places)} min` : '')),
             h('button', { class: 'btn solid small', type: 'button', onclick: () => back(t) }, "They're back"))))
       : h('div', { class: 'empty' }, 'Everyone is in the room.'));
 
@@ -203,11 +198,16 @@
           h('button', { class: 'btn ghost small', type: 'button', onclick: () => remove('students', s) }, 'Remove')))
       : h('div', { class: 'empty' }, 'No students yet. Add them above.'));
     replace($('places'), places.map((p) => h('div', { class: 'item' }, h('span', {}, p.name),
-      h('button', { class: 'btn ghost small', type: 'button', onclick: () => remove('places', p) }, 'Remove'))));
+      h('span', { class: 'side' },
+        h('input', {
+          class: 'input mins', type: 'number', min: 1, max: 180, value: p.minutes,
+          'aria-label': `Minutes allowed for ${p.name}`, onchange: (e) => setMinutes(p, e.target),
+        }),
+        h('span', { class: 'meta' }, 'min'),
+        h('button', { class: 'btn ghost small', type: 'button', onclick: () => remove('places', p) }, 'Remove')))));
 
     // settings
     $('code').textContent = teacher.roomCode;
-    $('limit').alertMinutes.value = teacher.alertMinutes;
     $('chime').checked = teacher.chime;
     if (document.activeElement !== $('exit-form').exitCode) $('exit-form').exitCode.value = teacher.exitCode;
     $('names-form').name.value = teacher.name;
@@ -219,7 +219,7 @@
 
   function tripRow(t, students, places, withTime = false) {
     const mins = Math.round((t.inAt - t.outAt) / 60000);
-    const late = mins >= state.teacher.alertMinutes;
+    const late = mins >= limitFor(t, places);
     return h('div', { class: 'item' },
       h('span', {}, `${name(students, t.studentId)} → ${name(places, t.placeId, 'out')}`,
         withTime ? h('span', { class: 'meta' }, `  ${clock(t.outAt)}–${clock(t.inAt)}`) : null),
@@ -237,7 +237,7 @@
       if (!t) continue;
       const late = isLate(t, now);
       row.classList.toggle('late', late);
-      row.querySelector('.meta').textContent = elapsed(t.outAt, now) + (late ? ` · over ${state.teacher.alertMinutes} min` : '');
+      row.querySelector('.meta').textContent = elapsed(t.outAt, now) + (late ? ` · over ${limitFor(t, state.places)} min` : '');
     }
     maybeChime(state.trips.filter((t) => t.inAt === null), now);
   }, 1000);
@@ -258,6 +258,13 @@
   async function back(t) {
     try { await api('POST', `/api/trips/${t.id}/checkin`); toast(`${name(state.students, t.studentId)} is back.`); refresh(); }
     catch (err) { toast(err.message); refresh(); }
+  }
+  async function setMinutes(place, input) {
+    try {
+      await api('PATCH', `/api/places/${place.id}`, { minutes: Number(input.value) });
+      toast(`${place.name}: ${Number(input.value)} min.`);
+      refresh();
+    } catch (err) { toast(err.message); input.value = place.minutes; }
   }
   async function remove(kind, x) {
     if (!confirm(`Remove ${x.name}?`)) return;
@@ -281,8 +288,7 @@
     for (const n of names) await api('POST', '/api/students', { name: n });
     form.reset(); form.name.focus();
   });
-  onSubmit('add-place', async (b, form) => { await api('POST', '/api/places', b); form.reset(); });
-  onSubmit('limit', async (b) => { await api('PATCH', '/api/settings', { alertMinutes: Number(b.alertMinutes) }); toast('Saved.'); });
+  onSubmit('add-place', async (b, form) => { await api('POST', '/api/places', { name: b.name, minutes: Number(b.minutes) }); form.reset(); });
   onSubmit('exit-form', async (b) => { await api('PATCH', '/api/settings', { exitCode: b.exitCode }); toast('Saved.'); });
   onSubmit('names-form', async (b) => { await api('PATCH', '/api/settings', b); toast('Saved.'); });
   $('chime').addEventListener('change', async (e) => {

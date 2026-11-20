@@ -53,7 +53,8 @@ test('teacher signs up and gets a room with default places', async () => {
   const s = await teacher('GET', '/api/state');
   assert.equal(s.status, 200);
   assert.deepEqual(s.json.places.map((p) => p.name), ['Bathroom', 'Water', 'Nurse', 'Library', 'Office']);
-  assert.equal(s.json.teacher.alertMinutes, 8);
+  assert.deepEqual(s.json.places.map((p) => p.minutes), [5, 5, 5, 5, 5], 'every place starts at 5 minutes');
+  assert.ok(!('alertMinutes' in s.json.teacher), 'the one-size room limit is gone');
   assert.match(s.json.teacher.roomCode, /^[A-Z2-9]{6}$/);
 });
 
@@ -94,7 +95,7 @@ test('iPad joins with the room code and sees students but not settings', async (
   const k = await ipad('GET', '/api/kiosk/state');
   assert.equal(k.status, 200);
   assert.deepEqual(k.json.students.map((x) => x.name), ['Chris', 'Grace']);
-  assert.equal(k.json.alertMinutes, 8);
+  assert.ok(k.json.places.every((p) => p.minutes === 5), 'the iPad knows each place\'s limit');
   assert.equal(k.json.roomCode, undefined, 'kiosk must not see the room code');
 
   // a kiosk cookie is not a teacher cookie
@@ -144,12 +145,11 @@ test('student checks in from the iPad, closedBy is student', async () => {
 
 test('teacher changes settings and regenerates the room code, old code stops working', async () => {
   const before = (await teacher('GET', '/api/state')).json.teacher.roomCode;
-  const r = await teacher('PATCH', '/api/settings', { alertMinutes: 5, chime: false });
+  const r = await teacher('PATCH', '/api/settings', { chime: false });
   assert.equal(r.status, 200, r.text);
-  assert.equal(r.json.teacher.alertMinutes, 5);
   assert.equal(r.json.teacher.chime, false);
 
-  const bad = await teacher('PATCH', '/api/settings', { alertMinutes: 0 });
+  const bad = await teacher('PATCH', '/api/settings', { roomName: '  ' });
   assert.equal(bad.status, 400);
 
   const nc = await teacher('POST', '/api/settings/new-code');
@@ -162,6 +162,34 @@ test('teacher changes settings and regenerates the room code, old code stops wor
   assert.equal((await ipad('GET', '/api/kiosk/state')).status, 401);
   const rejoin = await ipad('POST', '/api/kiosk/join', { code: nc.json.teacher.roomCode });
   assert.equal(rejoin.status, 200);
+});
+
+test('each place has its own time limit that the teacher can change', async () => {
+  const places = (await teacher('GET', '/api/state')).json.places;
+  const water = places.find((p) => p.name === 'Water');
+  const bathroom = places.find((p) => p.name === 'Bathroom');
+
+  const r = await teacher('PATCH', `/api/places/${water.id}`, { minutes: 2 });
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.json.place.minutes, 2);
+  for (const bad of [0, 181, 2.5, 'soon']) {
+    assert.equal((await teacher('PATCH', `/api/places/${water.id}`, { minutes: bad })).status, 400, `rejects ${bad}`);
+  }
+  assert.equal((await teacher('PATCH', '/api/places/nope', { minutes: 3 })).status, 404);
+  assert.equal((await ipad('PATCH', `/api/places/${water.id}`, { minutes: 60 })).status, 401, 'students cannot change limits');
+
+  const after = (await ipad('GET', '/api/kiosk/state')).json.places;
+  assert.equal(after.find((p) => p.id === water.id).minutes, 2);
+  assert.equal(after.find((p) => p.id === bathroom.id).minutes, 5, 'other places are untouched');
+
+  // a new place starts at 5 unless the teacher says otherwise
+  const gym = await teacher('POST', '/api/places', { name: 'Gym' });
+  assert.equal(gym.json.place.minutes, 5);
+  const far = await teacher('POST', '/api/places', { name: 'Far Office', minutes: 12 });
+  assert.equal(far.json.place.minutes, 12);
+  assert.equal((await teacher('POST', '/api/places', { name: 'Bad', minutes: 0 })).status, 400);
+  await teacher('DELETE', `/api/places/${gym.json.place.id}`);
+  await teacher('DELETE', `/api/places/${far.json.place.id}`);
 });
 
 test('removing a student who is out is refused; removing one who is in works', async () => {
@@ -242,7 +270,7 @@ test('logout then login works and data survived', async () => {
   const ok = await teacher('POST', '/api/login', { email: 'CARTER@school.test', password: 'pencils123' });
   assert.equal(ok.status, 200, ok.text);
   const s = await teacher('GET', '/api/state');
-  assert.equal(s.json.teacher.alertMinutes, 5);
+  assert.equal(s.json.teacher.chime, false);
   assert.ok(s.json.trips.length >= 3, 'history kept');
 });
 

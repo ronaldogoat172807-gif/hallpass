@@ -97,6 +97,7 @@ a.btn { text-decoration: none; display: inline-block; }
 .input.code { font-family: var(--mono); font-size: 1.8rem; letter-spacing: .3em; text-transform: uppercase; text-align: center; }
 .row-form { display: flex; gap: 8px; }
 .row-form .input { flex: 1; }
+.input.mins, .row-form .input.mins { flex: none; width: 5.2em; text-align: center; padding: 6px 8px; }
 
 .error { background: var(--red-paper); color: var(--red-deep); border-radius: 6px; padding: 10px 12px; margin: 8px 0; font-weight: 700; }
 .error:empty { display: none; }

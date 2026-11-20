@@ -12,6 +12,13 @@ import { CURRENT, UPDATES, unseenUpdates, isKnownVersion } from './lib/updates.j
 const here = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_PLACES = ['Bathroom', 'Water', 'Nurse', 'Library', 'Office'];
 const DAY = 24 * 60 * 60 * 1000;
+const PLACE_MINUTES = 5; // how long a trip to a place may take unless the teacher changes it
+const withMinutes = (p) => ({ ...p, minutes: p.minutes ?? PLACE_MINUTES });
+// undefined -> the default; anything else must be a whole number from 1 to 180, or null if not
+function placeMinutes(v) {
+  if (v === undefined) return PLACE_MINUTES;
+  return Number.isInteger(v) && v >= 1 && v <= 180 ? v : null;
+}
 
 export function createApp({ dataFile, store = openStore(dataFile) }) {
   const { db, save } = store;
@@ -109,7 +116,7 @@ export function createApp({ dataFile, store = openStore(dataFile) }) {
   }
   const publicTeacher = (t) => ({
     id: t.id, name: t.name, roomName: t.roomName, email: t.email,
-    roomCode: t.roomCode, alertMinutes: t.alertMinutes, chime: t.chime,
+    roomCode: t.roomCode, chime: t.chime,
     exitCode: t.exitCode || '',
   });
 
@@ -125,11 +132,11 @@ export function createApp({ dataFile, store = openStore(dataFile) }) {
     const { salt, hash } = hashPassword(password);
     const teacher = {
       id: newId(), name, roomName, email, salt, passHash: hash,
-      roomCode: uniqueRoomCode(), alertMinutes: 8, chime: true, createdAt: Date.now(),
+      roomCode: uniqueRoomCode(), chime: true, createdAt: Date.now(),
       seenUpdate: CURRENT, // a brand-new account has nothing to catch up on
     };
     db.teachers.push(teacher);
-    for (const p of DEFAULT_PLACES) db.places.push({ id: newId(), teacherId: teacher.id, name: p });
+    for (const p of DEFAULT_PLACES) db.places.push({ id: newId(), teacherId: teacher.id, name: p, minutes: PLACE_MINUTES });
     setSession(res, 'teacher', teacher.id);
     res.json({ teacher: publicTeacher(teacher) });
   });
@@ -161,7 +168,7 @@ export function createApp({ dataFile, store = openStore(dataFile) }) {
     res.json({
       teacher: publicTeacher(t),
       students: db.students.filter((s) => s.teacherId === t.id),
-      places: db.places.filter((p) => p.teacherId === t.id),
+      places: db.places.filter((p) => p.teacherId === t.id).map(withMinutes),
       trips: db.trips.filter((x) => x.teacherId === t.id && (x.inAt === null || x.outAt >= since)),
       version: CURRENT,
       updates: unseenUpdates(t.seenUpdate),
@@ -195,10 +202,23 @@ export function createApp({ dataFile, store = openStore(dataFile) }) {
   app.post('/api/places', requireTeacher, (req, res) => {
     const name = str(req.body.name);
     if (!name) return fail(res, 400, 'Give the place a name.');
-    const place = { id: newId(), teacherId: req.teacher.id, name };
+    const minutes = placeMinutes(req.body.minutes);
+    if (minutes === null) return fail(res, 400, 'Minutes must be a whole number from 1 to 180.');
+    const place = { id: newId(), teacherId: req.teacher.id, name, minutes };
     db.places.push(place);
     save(); broadcast(req.teacher.id);
     res.json({ place });
+  });
+
+  // how long a trip to this place may take before the row turns red
+  app.patch('/api/places/:id', requireTeacher, (req, res) => {
+    const place = db.places.find((p) => p.id === req.params.id && p.teacherId === req.teacher.id);
+    if (!place) return fail(res, 404, 'Place not found.');
+    const minutes = placeMinutes(req.body.minutes ?? null);
+    if (minutes === null) return fail(res, 400, 'Minutes must be a whole number from 1 to 180.');
+    place.minutes = minutes;
+    save(); broadcast(req.teacher.id);
+    res.json({ place: withMinutes(place) });
   });
 
   app.delete('/api/places/:id', requireTeacher, (req, res) => {
@@ -212,11 +232,6 @@ export function createApp({ dataFile, store = openStore(dataFile) }) {
   app.patch('/api/settings', requireTeacher, (req, res) => {
     const t = req.teacher;
     const b = req.body;
-    if ('alertMinutes' in b) {
-      const n = Number(b.alertMinutes);
-      if (!Number.isInteger(n) || n < 1 || n > 180) return fail(res, 400, 'Time limit must be 1 to 180 minutes.');
-      t.alertMinutes = n;
-    }
     if ('chime' in b) t.chime = Boolean(b.chime);
     if ('exitCode' in b) {
       const v = str(b.exitCode);
@@ -280,9 +295,8 @@ export function createApp({ dataFile, store = openStore(dataFile) }) {
     res.json({
       roomName: t.roomName,
       teacherName: t.name,
-      alertMinutes: t.alertMinutes,
       students: db.students.filter((s) => s.teacherId === t.id),
-      places: db.places.filter((p) => p.teacherId === t.id),
+      places: db.places.filter((p) => p.teacherId === t.id).map(withMinutes),
       openTrips: openTrips(db, t.id),
       now: Date.now(),
     });

@@ -65,7 +65,7 @@
 </div>
 
 <script type="module">
-  import { api, live, changed, elapsed, minutes, tickClock, h, replace, toast } from '/common.js';
+  import { api, live, changed, limitFor, elapsed, minutes, tickClock, h, replace, toast } from '/common.js';
 
   const $ = (id) => document.getElementById(id);
   tickClock($('clock'));
@@ -86,7 +86,7 @@
 
   function render() {
     if (!state) return;
-    const { roomName, teacherName, students, places, openTrips, alertMinutes } = state;
+    const { roomName, teacherName, students, places, openTrips } = state;
     document.title = `${roomName} · Hall Pass`;
     $('room').textContent = roomName;
     $('teacher').textContent = teacherName;
@@ -101,7 +101,7 @@
     replace($('out'), openTrips
       .slice().sort((a, b) => a.outAt - b.outAt)
       .map((t) => {
-        const late = now - t.outAt >= alertMinutes * 60000;
+        const late = now - t.outAt >= limitFor(t, places) * 60000;
         return h('div', { class: 'out-row' + (late ? ' late' : ''), 'data-trip': t.id },
           h('div', { class: 'who' }, S[t.studentId]?.name ?? '?',
             h('small', {}, `${P[t.placeId]?.name ?? 'Out'} · ${elapsed(t.outAt, now)}${late ? ' · over the limit' : ''}`)),
@@ -123,7 +123,7 @@
     for (const row of document.querySelectorAll('.out-row')) {
       const t = state.openTrips.find((x) => x.id === row.dataset.trip);
       if (!t) continue;
-      const late = now - t.outAt >= state.alertMinutes * 60000;
+      const late = now - t.outAt >= limitFor(t, state.places) * 60000;
       row.classList.toggle('late', late);
       row.querySelector('small').textContent =
         `${state.places.find((p) => p.id === t.placeId)?.name ?? 'Out'} · ${elapsed(t.outAt, now)}${late ? ' · over the limit' : ''}`;

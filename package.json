@@ -1,6 +1,6 @@
 {
   "name": "hallpass",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A classroom hall pass board: students tap out and back in on a shared iPad, the teacher watches from her own device.",
   "main": "server.js",
   "type": "module",

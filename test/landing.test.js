@@ -40,3 +40,12 @@ test('changed() is true only when the data differs, ignoring the server clock', 
   assert.equal(changed('t', { students: ['a', 'b'], now: 3 }), true, 'new student');
   assert.equal(changed('other', { students: ['a', 'b'], now: 3 }), true, 'each screen tracks its own');
 });
+
+test('limitFor gives the limit of the place a trip went to, 5 if the place is gone', async () => {
+  const { limitFor } = await import('../public/common.js');
+  const places = [{ id: 'w', minutes: 2 }, { id: 'b', minutes: 9 }, { id: 'old' }];
+  assert.equal(limitFor({ placeId: 'w' }, places), 2);
+  assert.equal(limitFor({ placeId: 'b' }, places), 9);
+  assert.equal(limitFor({ placeId: 'old' }, places), 5);
+  assert.equal(limitFor({ placeId: 'deleted' }, places), 5);
+});

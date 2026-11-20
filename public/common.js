@@ -49,6 +49,11 @@ export function changed(name, state) {
   return true;
 }
 
+// Minutes a trip may take: the limit of the place it went to (5 if that place was removed).
+export function limitFor(trip, places) {
+  return places.find((p) => p.id === trip.placeId)?.minutes ?? 5;
+}
+
 export function pad(n) { return String(n).padStart(2, '0'); }
 
 export function elapsed(fromMs, now = Date.now()) {
