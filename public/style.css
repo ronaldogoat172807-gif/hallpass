@@ -75,6 +75,7 @@ a { color: var(--sticky); }
   padding: 10px 16px; font-size: 1rem; font-weight: 700; line-height: 1.1;
   transition: transform .05s;
 }
+a.btn { text-decoration: none; display: inline-block; }
 .btn:active { transform: scale(.97); }
 .btn.solid { background: var(--chalk); color: var(--board); }
 .btn.sticky { background: var(--sticky); color: var(--sticky-ink); border-color: var(--sticky); }

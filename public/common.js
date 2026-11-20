@@ -16,6 +16,18 @@ export async function api(method, path, body) {
   return json;
 }
 
+// Where the landing page should send this browser. One browser can be signed in as the
+// teacher AND joined as the classroom iPad at once (two tabs on one computer), so the
+// answer has to be decided once, in a fixed order: the teacher board wins unless the
+// address says otherwise (/?as=ipad or /?as=teacher). null means stay on the landing page.
+export function landingTarget({ teacher, kiosk, as }) {
+  if (as === 'ipad') return kiosk ? '/kiosk.html' : null;
+  if (as === 'teacher') return teacher ? '/teacher.html' : null;
+  if (teacher) return '/teacher.html';
+  if (kiosk) return '/kiosk.html';
+  return null;
+}
+
 // Call onChange now, whenever the server says something changed, and every 30s as a fallback.
 export function live(onChange) {
   const es = new EventSource('/api/events');

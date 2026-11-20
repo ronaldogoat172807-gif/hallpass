@@ -83,6 +83,7 @@ export function createApp({ dataFile }) {
   const publicTeacher = (t) => ({
     id: t.id, name: t.name, roomName: t.roomName, email: t.email,
     roomCode: t.roomCode, alertMinutes: t.alertMinutes, chime: t.chime,
+    exitCode: t.exitCode || '',
   });
 
   // ---- teacher accounts -------------------------------------------------
@@ -184,6 +185,11 @@ export function createApp({ dataFile }) {
       t.alertMinutes = n;
     }
     if ('chime' in b) t.chime = Boolean(b.chime);
+    if ('exitCode' in b) {
+      const v = str(b.exitCode);
+      if (v && !/^[A-Za-z0-9]{4,12}$/.test(v)) return fail(res, 400, 'Exit code must be 4 to 12 letters or numbers (or empty to turn it off).');
+      t.exitCode = v;
+    }
     if ('roomName' in b) { const v = str(b.roomName); if (!v) return fail(res, 400, 'Room name cannot be empty.'); t.roomName = v; }
     if ('name' in b) { const v = str(b.name); if (!v) return fail(res, 400, 'Name cannot be empty.'); t.name = v; }
     save(); broadcast(t.id);
@@ -207,10 +213,23 @@ export function createApp({ dataFile }) {
     res.json({ roomName: teacher.roomName, teacherName: teacher.name });
   });
 
-  // Students will absolutely press this button, so it needs the teacher's password.
+  // The teacher opening the iPad screen on her own computer: she is already signed in,
+  // so join her room directly. Without this the only way to the join form was to sign
+  // out, which signs out every tab in the browser, the teacher board included.
+  app.post('/api/kiosk/open', requireTeacher, (req, res) => {
+    const current = sessionOf(req, 'kiosk');
+    if (current?.teacher.id !== req.teacher.id) setSession(res, 'kiosk', req.teacher.id);
+    res.json({ roomName: req.teacher.roomName, teacherName: req.teacher.name });
+  });
+
+  // Students will absolutely press this button, so it needs the teacher's exit
+  // code (if she set one) or her password.
   app.post('/api/kiosk/leave', requireKiosk, (req, res) => {
-    if (!checkPassword(req.teacher, String(req.body?.password ?? ''))) {
-      return fail(res, 401, "That's not the teacher's password.");
+    const typed = String(req.body?.password ?? '');
+    const exitCode = req.teacher.exitCode || '';
+    const codeOk = exitCode !== '' && typed === exitCode;
+    if (!codeOk && !checkPassword(req.teacher, typed)) {
+      return fail(res, 401, exitCode ? "That's not the exit code." : "That's not the teacher's password.");
     }
     const token = cookies(req).ksess;
     db.sessions = db.sessions.filter((s) => s.token !== token);

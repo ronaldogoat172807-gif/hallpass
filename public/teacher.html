@@ -13,6 +13,7 @@
     <div class="right">
       <span class="pill" id="chimed" hidden></span>
       <span class="clock" id="clock"></span>
+      <a class="btn ghost small" href="/?as=ipad" target="_blank" rel="noopener">Open iPad screen</a>
       <button class="btn ghost small" id="logout" type="button">Sign out</button>
     </div>
   </div>
@@ -76,7 +77,15 @@
       <div class="label">Room code for the classroom iPad</div>
       <p class="hint">On the iPad, open this site and type this code once. It stays joined after that.</p>
       <div><span class="code-box" id="code">······</span></div>
+      <p class="hint">Testing on one computer? Use <b>Open iPad screen</b> at the top. It opens in a new tab, already joined, and this tab stays on your board. Don't sign out to get there: signing out applies to every tab.</p>
       <p><button class="btn ghost small" id="new-code" type="button">Make a new code (kicks off any joined iPads)</button></p>
+
+      <div class="label">Exit code for the iPad</div>
+      <form class="row-form" id="exit-form" style="max-width:320px">
+        <input class="input" name="exitCode" maxlength="12" autocomplete="off" spellcheck="false" placeholder="none">
+        <button class="btn" type="submit">Save</button>
+      </form>
+      <p class="hint">Typed on the iPad to leave the room, instead of your password. Leave it empty to require your password.</p>
 
       <div class="label">Time limit</div>
       <form class="row-form" id="limit" style="max-width:320px">
@@ -120,7 +129,7 @@
 
   async function refresh() {
     try { state = await api('GET', '/api/state'); }
-    catch (err) { if (err.status === 401) location.replace('/'); return; }
+    catch (err) { if (err.status === 401) location.replace('/?as=teacher'); return; }
     render();
   }
 
@@ -178,6 +187,7 @@
     $('code').textContent = teacher.roomCode;
     $('limit').alertMinutes.value = teacher.alertMinutes;
     $('chime').checked = teacher.chime;
+    if (document.activeElement !== $('exit-form').exitCode) $('exit-form').exitCode.value = teacher.exitCode;
     $('names-form').name.value = teacher.name;
     $('names-form').roomName.value = teacher.roomName;
 
@@ -250,6 +260,7 @@
   });
   onSubmit('add-place', async (b, form) => { await api('POST', '/api/places', b); form.reset(); });
   onSubmit('limit', async (b) => { await api('PATCH', '/api/settings', { alertMinutes: Number(b.alertMinutes) }); toast('Saved.'); });
+  onSubmit('exit-form', async (b) => { await api('PATCH', '/api/settings', { exitCode: b.exitCode }); toast('Saved.'); });
   onSubmit('names-form', async (b) => { await api('PATCH', '/api/settings', b); toast('Saved.'); });
   $('chime').addEventListener('change', async (e) => {
     try { await api('PATCH', '/api/settings', { chime: e.target.checked }); } catch (err) { toast(err.message); }
@@ -259,7 +270,7 @@
     if (!confirm('Make a new room code? Any iPad already joined will need to type the new one.')) return;
     try { await api('POST', '/api/settings/new-code'); refresh(); } catch (err) { toast(err.message); }
   };
-  $('logout').onclick = async () => { await api('POST', '/api/logout'); location.replace('/'); };
+  $('logout').onclick = async () => { await api('POST', '/api/logout'); location.replace('/?as=teacher'); };
 
   live(refresh);
 </script>

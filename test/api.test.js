@@ -194,6 +194,28 @@ test('leaving the room from the iPad needs the teacher password', async () => {
   assert.equal((await ipad('POST', '/api/kiosk/join', { code: t.roomCode })).status, 200);
 });
 
+test('an exit code lets the iPad leave without the teacher password', async () => {
+  const bad = await teacher('PATCH', '/api/settings', { exitCode: '12' });
+  assert.equal(bad.status, 400, 'too short');
+  const set = await teacher('PATCH', '/api/settings', { exitCode: '1234' });
+  assert.equal(set.status, 200, set.text);
+  assert.equal(set.json.teacher.exitCode, '1234');
+  assert.ok(!('exitCode' in (await ipad('GET', '/api/kiosk/state')).json), 'iPad never sees the exit code');
+
+  assert.equal((await ipad('POST', '/api/kiosk/leave', { password: '4321' })).status, 401);
+  assert.equal((await ipad('POST', '/api/kiosk/leave', { password: '' })).status, 401);
+  assert.equal((await ipad('GET', '/api/kiosk/state')).status, 200, 'still joined after wrong codes');
+  assert.equal((await ipad('POST', '/api/kiosk/leave', { password: '1234' })).status, 200);
+  assert.equal((await ipad('GET', '/api/kiosk/state')).status, 401, 'left with the exit code');
+
+  // the teacher password still works too, and clearing the code turns it off
+  assert.equal((await ipad('POST', '/api/kiosk/join', { code: set.json.teacher.roomCode })).status, 200);
+  assert.equal((await ipad('POST', '/api/kiosk/leave', { password: 'pencils123' })).status, 200);
+  assert.equal((await ipad('POST', '/api/kiosk/join', { code: set.json.teacher.roomCode })).status, 200);
+  assert.equal((await teacher('PATCH', '/api/settings', { exitCode: '' })).status, 200);
+  assert.equal((await ipad('POST', '/api/kiosk/leave', { password: '1234' })).status, 401, 'cleared code no longer works');
+});
+
 test('logout then login works and data survived', async () => {
   assert.equal((await teacher('POST', '/api/logout')).status, 200);
   assert.equal((await teacher('GET', '/api/state')).status, 401);
@@ -244,3 +266,20 @@ async function teacherCookie() {
   });
   return res.headers.get('set-cookie').split(';')[0];
 }
+
+test('a signed-in teacher can open the iPad screen without signing out or typing the code', async () => {
+  assert.equal((await stranger('POST', '/api/kiosk/open')).status, 401, 'needs a teacher sign-in');
+
+  const laptop = device();
+  assert.equal((await laptop('POST', '/api/login', { email: 'carter@school.test', password: 'pencils123' })).status, 200);
+  const before = (await teacher('GET', '/api/state')).json;
+
+  // the jar keeps the newest cookie, so after this the laptop only holds the iPad sign-in
+  const open = await laptop('POST', '/api/kiosk/open');
+  assert.equal(open.status, 200, open.text);
+  const k = await laptop('GET', '/api/kiosk/state');
+  assert.equal(k.status, 200, 'joined to the room');
+  assert.equal(k.json.roomName, before.teacher.roomName);
+
+  assert.equal((await teacher('GET', '/api/state')).status, 200, 'teacher sign-ins are untouched');
+});

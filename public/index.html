@@ -54,11 +54,18 @@
 </div>
 
 <script type="module">
-  import { api } from '/common.js';
+  import { api, landingTarget } from '/common.js';
 
   // Already signed in on this device? Go straight to the right screen.
-  api('GET', '/api/me').then(() => location.replace('/teacher.html')).catch(() => {});
-  api('GET', '/api/kiosk/state').then(() => location.replace('/kiosk.html')).catch(() => {});
+  // Both checks finish before one decision is made, so two sign-ins can't race.
+  const has = (path) => api('GET', path).then(() => true, () => false);
+  Promise.all([has('/api/me'), has('/api/kiosk/state')]).then(async ([teacher, kiosk]) => {
+    const as = new URLSearchParams(location.search).get('as');
+    // A signed-in teacher asking for the iPad screen is joined to her own room on the spot.
+    if (as === 'ipad' && teacher) kiosk = await api('POST', '/api/kiosk/open').then(() => true, () => kiosk);
+    const target = landingTarget({ teacher, kiosk, as });
+    if (target) location.replace(target);
+  });
 
   for (const b of document.querySelectorAll('.tabs button')) {
     b.addEventListener('click', () => {

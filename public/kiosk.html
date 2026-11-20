@@ -28,12 +28,12 @@
   </div>
 </div>
 
-<!-- Leaving the room needs the teacher's password -->
+<!-- Leaving the room needs the teacher's exit code or password -->
 <div class="sheet-back" id="leave-sheet" hidden>
   <form class="sheet" id="leave-form">
     <h2>Teachers only</h2>
-    <div class="sub">Type the teacher's password to disconnect this iPad from the room.</div>
-    <input class="input" name="password" type="password" autocomplete="current-password" placeholder="Teacher password" required>
+    <div class="sub">Type the exit code (or the teacher's password) to disconnect this iPad from the room.</div>
+    <input class="input" name="password" type="password" autocomplete="off" placeholder="Exit code" required>
     <div class="error" id="leave-error"></div>
     <div class="actions">
       <button class="btn ghost" id="leave-cancel" type="button">Never mind</button>
@@ -78,7 +78,7 @@
     try {
       state = await api('GET', '/api/kiosk/state');
     } catch (err) {
-      if (err.status === 401) location.replace('/');
+      if (err.status === 401) location.replace('/?as=ipad');
       return;
     }
     render();
