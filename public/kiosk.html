@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Hall Pass</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="board">
+  <div class="topbar">
+    <h1 id="room">…</h1>
+    <div class="right"><span id="count"></span><span class="clock" id="clock"></span></div>
+  </div>
+
+  <div id="out-section" hidden>
+    <div class="label">Out right now · tap I'm back when you return</div>
+    <div class="out-strip" id="out"></div>
+  </div>
+
+  <div class="label">Leaving? Tap your name</div>
+  <div class="names" id="names"><div class="empty">Loading…</div></div>
+
+  <div class="foot">
+    <span id="teacher"></span>
+    <button class="btn ghost small" id="leave" type="button">Leave this room</button>
+  </div>
+</div>
+
+<!-- Where are you going? -->
+<div class="sheet-back" id="where" hidden>
+  <div class="sheet">
+    <h2 id="where-title">Where are you going?</h2>
+    <div class="sub">Tap one</div>
+    <div class="places" id="places" style="justify-content:center"></div>
+    <div class="actions"><button class="btn ghost" id="where-cancel" type="button">Never mind</button></div>
+  </div>
+</div>
+
+<!-- Welcome back confirm (fixes the wrong-name problem) -->
+<div class="sheet-back" id="back" hidden>
+  <div class="sheet">
+    <h2 id="back-title">Welcome back!</h2>
+    <div class="sub" id="back-sub"></div>
+    <div class="actions">
+      <button class="btn sticky big" id="back-yes" type="button">Yep, that's me</button>
+      <button class="btn big" id="back-no" type="button">That's not me</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import { api, live, elapsed, minutes, tickClock, h, replace, toast } from '/common.js';
+
+  const $ = (id) => document.getElementById(id);
+  tickClock($('clock'));
+
+  let state = null;
+  let picking = null;   // student who tapped their name
+  let returning = null; // trip whose "I'm back" was tapped
+
+  async function refresh() {
+    try {
+      state = await api('GET', '/api/kiosk/state');
+    } catch (err) {
+      if (err.status === 401) location.replace('/');
+      return;
+    }
+    render();
+  }
+
+  function render() {
+    if (!state) return;
+    const { roomName, teacherName, students, places, openTrips, alertMinutes } = state;
+    document.title = `${roomName} · Hall Pass`;
+    $('room').textContent = roomName;
+    $('teacher').textContent = teacherName;
+    $('count').textContent = openTrips.length ? `${openTrips.length} out` : 'Everyone is here';
+
+    const outIds = new Set(openTrips.map((t) => t.studentId));
+    const byId = (list) => Object.fromEntries(list.map((x) => [x.id, x]));
+    const S = byId(students), P = byId(places);
+    const now = Date.now();
+
+    $('out-section').hidden = openTrips.length === 0;
+    replace($('out'), openTrips
+      .slice().sort((a, b) => a.outAt - b.outAt)
+      .map((t) => {
+        const late = now - t.outAt >= alertMinutes * 60000;
+        return h('div', { class: 'out-row' + (late ? ' late' : ''), 'data-trip': t.id },
+          h('div', { class: 'who' }, S[t.studentId]?.name ?? '?',
+            h('small', {}, `${P[t.placeId]?.name ?? 'Out'} · ${elapsed(t.outAt, now)}${late ? ' · over the limit' : ''}`)),
+          h('button', { class: 'btn board big', type: 'button', onclick: () => askBack(t) }, "I'm back"));
+      }));
+
+    replace($('names'), students.length
+      ? students.map((s) => h('button', {
+          class: 'name' + (outIds.has(s.id) ? ' out' : ''), type: 'button',
+          onclick: () => askWhere(s),
+        }, s.name))
+      : h('div', { class: 'empty' }, 'No students yet. The teacher adds them on her screen.'));
+  }
+
+  // keep the timers moving between refreshes
+  setInterval(() => {
+    if (!state) return;
+    const now = Date.now();
+    for (const row of document.querySelectorAll('.out-row')) {
+      const t = state.openTrips.find((x) => x.id === row.dataset.trip);
+      if (!t) continue;
+      const late = now - t.outAt >= state.alertMinutes * 60000;
+      row.classList.toggle('late', late);
+      row.querySelector('small').textContent =
+        `${state.places.find((p) => p.id === t.placeId)?.name ?? 'Out'} · ${elapsed(t.outAt, now)}${late ? ' · over the limit' : ''}`;
+    }
+  }, 1000);
+
+  function askWhere(student) {
+    picking = student;
+    $('where-title').textContent = `Where are you going, ${student.name}?`;
+    replace($('places'), state.places.map((p) =>
+      h('button', { class: 'place', type: 'button', onclick: () => goOut(p) }, p.name)));
+    $('where').hidden = false;
+  }
+  async function goOut(place) {
+    const s = picking;
+    $('where').hidden = true;
+    picking = null;
+    try {
+      await api('POST', '/api/trips', { studentId: s.id, placeId: place.id });
+      toast(`Bye ${s.name}, see you soon!`);
+      refresh();
+    } catch (err) { toast(err.message); refresh(); }
+  }
+  $('where-cancel').onclick = () => { $('where').hidden = true; picking = null; };
+
+  function askBack(trip) {
+    returning = trip;
+    const name = state.students.find((s) => s.id === trip.studentId)?.name ?? 'there';
+    $('back-title').textContent = `Welcome back, ${name}!`;
+    $('back-sub').textContent = `Out for ${minutes(trip.outAt)} min. Is this you?`;
+    $('back').hidden = false;
+  }
+  $('back-yes').onclick = async () => {
+    const t = returning;
+    $('back').hidden = true;
+    returning = null;
+    try {
+      await api('POST', `/api/trips/${t.id}/checkin`);
+      refresh();
+    } catch (err) { toast(err.message); refresh(); }
+  };
+  $('back-no').onclick = () => {
+    $('back').hidden = true;
+    returning = null;
+    toast('No problem. Tap the right name.');
+  };
+
+  // Tapping the dark backdrop closes a sheet, same as Never mind / That's not me.
+  for (const id of ['where', 'back']) {
+    $(id).addEventListener('click', (e) => { if (e.target.id === id) { $(id).hidden = true; picking = returning = null; } });
+  }
+
+  $('leave').onclick = async () => {
+    if (!confirm('Disconnect this iPad from the room? You will need the room code to join again.')) return;
+    await api('POST', '/api/kiosk/leave');
+    location.replace('/');
+  };
+
+  live(refresh);
+</script>
+</body>
+</html>

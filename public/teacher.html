@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hall Pass</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="board">
+  <div class="topbar">
+    <h1 id="room">…</h1>
+    <div class="right">
+      <span class="pill" id="chimed" hidden></span>
+      <span class="clock" id="clock"></span>
+      <button class="btn ghost small" id="logout" type="button">Sign out</button>
+    </div>
+  </div>
+
+  <div class="dash">
+    <nav class="nav">
+      <button type="button" data-panel="now" class="active">Right now<span class="badge" id="now-badge" hidden></span></button>
+      <button type="button" data-panel="students">Students</button>
+      <button type="button" data-panel="places">Places</button>
+      <button type="button" data-panel="history">History</button>
+      <button type="button" data-panel="settings">Settings</button>
+    </nav>
+
+    <!-- RIGHT NOW -->
+    <section class="panel" id="panel-now">
+      <div class="label">Out right now</div>
+      <div class="list" id="out"></div>
+
+      <div class="label">Send someone out from here</div>
+      <form class="row-form" id="sendout">
+        <select class="input" name="studentId" required></select>
+        <select class="input" name="placeId" required></select>
+        <button class="btn" type="submit">Out</button>
+      </form>
+
+      <div class="label">Earlier today</div>
+      <div class="list" id="today"></div>
+    </section>
+
+    <!-- STUDENTS -->
+    <section class="panel" id="panel-students" hidden>
+      <div class="label">Add a student</div>
+      <form class="row-form" id="add-student">
+        <input class="input" name="name" placeholder="First name" autocomplete="off" required>
+        <button class="btn" type="submit">Add</button>
+      </form>
+      <p class="hint">Tip: paste a whole list, one name per line, and hit Add.</p>
+      <div class="label">Students</div>
+      <div class="list" id="students"></div>
+    </section>
+
+    <!-- PLACES -->
+    <section class="panel" id="panel-places" hidden>
+      <div class="label">Add a place</div>
+      <form class="row-form" id="add-place">
+        <input class="input" name="name" placeholder="Counselor" autocomplete="off" required>
+        <button class="btn" type="submit">Add</button>
+      </form>
+      <div class="label">Places students can go</div>
+      <div class="list" id="places"></div>
+    </section>
+
+    <!-- HISTORY -->
+    <section class="panel" id="panel-history" hidden>
+      <div class="label">Last 24 hours</div>
+      <div class="list" id="history"></div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section class="panel" id="panel-settings" hidden>
+      <div class="label">Room code for the classroom iPad</div>
+      <p class="hint">On the iPad, open this site and type this code once. It stays joined after that.</p>
+      <div><span class="code-box" id="code">······</span></div>
+      <p><button class="btn ghost small" id="new-code" type="button">Make a new code (kicks off any joined iPads)</button></p>
+
+      <div class="label">Time limit</div>
+      <form class="row-form" id="limit" style="max-width:320px">
+        <input class="input" name="alertMinutes" type="number" min="1" max="180" required>
+        <span style="align-self:center">minutes</span>
+        <button class="btn" type="submit">Save</button>
+      </form>
+      <p class="hint">A student out longer than this turns red, and a chime plays once.</p>
+
+      <div class="label">Chime</div>
+      <label class="toggle"><input type="checkbox" id="chime"> Play a chime when someone goes over the limit</label>
+      <p><button class="btn ghost small" id="test-chime" type="button">Test the chime</button></p>
+
+      <div class="label">Names</div>
+      <form id="names-form" style="max-width:420px">
+        <div class="field"><label>Your name (students see this)</label><input class="input" name="name" required></div>
+        <div class="field"><label>Room name</label><input class="input" name="roomName" required></div>
+        <button class="btn" type="submit">Save names</button>
+      </form>
+    </section>
+  </div>
+</div>
+
+<script type="module">
+  import { api, live, elapsed, clock, tickClock, h, replace, toast, chime } from '/common.js';
+
+  const $ = (id) => document.getElementById(id);
+  tickClock($('clock'));
+  document.addEventListener('pointerdown', () => chime.unlock(), { once: true });
+
+  let state = null;
+  const chimedTrips = new Set(JSON.parse(sessionStorage.getItem('chimed') || '[]'));
+
+  // ---- tabs ----
+  for (const b of document.querySelectorAll('.nav button')) {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('.nav button').forEach((x) => x.classList.toggle('active', x === b));
+      document.querySelectorAll('.panel').forEach((p) => { p.hidden = p.id !== 'panel-' + b.dataset.panel; });
+    });
+  }
+
+  async function refresh() {
+    try { state = await api('GET', '/api/state'); }
+    catch (err) { if (err.status === 401) location.replace('/'); return; }
+    render();
+  }
+
+  const name = (list, id, fallback = '?') => list.find((x) => x.id === id)?.name ?? fallback;
+  const isLate = (t, now) => t.inAt === null && now - t.outAt >= state.teacher.alertMinutes * 60000;
+
+  function render() {
+    const { teacher, students, places, trips } = state;
+    const now = Date.now();
+    document.title = `${teacher.roomName} · Hall Pass`;
+    $('room').textContent = teacher.roomName;
+
+    const open = trips.filter((t) => t.inAt === null).sort((a, b) => a.outAt - b.outAt);
+    const closed = trips.filter((t) => t.inAt !== null).sort((a, b) => b.outAt - a.outAt);
+    const lateCount = open.filter((t) => isLate(t, now)).length;
+
+    const badge = $('now-badge');
+    badge.hidden = open.length === 0;
+    badge.textContent = open.length;
+    badge.classList.toggle('late', lateCount > 0);
+
+    replace($('out'), open.length
+      ? open.map((t) => h('div', { class: 'item' + (isLate(t, now) ? ' late' : ''), 'data-trip': t.id },
+          h('span', {}, `${name(students, t.studentId)} → ${name(places, t.placeId, 'out')}`),
+          h('span', { class: 'side' },
+            h('span', { class: 'meta' }, elapsed(t.outAt, now) + (isLate(t, now) ? ` · over ${teacher.alertMinutes} min` : '')),
+            h('button', { class: 'btn solid small', type: 'button', onclick: () => back(t) }, "They're back"))))
+      : h('div', { class: 'empty' }, 'Everyone is in the room.'));
+
+    const today = closed.filter((t) => now - t.outAt < 12 * 3600 * 1000);
+    replace($('today'), today.length
+      ? today.map((t) => tripRow(t, students, places))
+      : h('div', { class: 'empty' }, 'Nothing yet today.'));
+
+    replace($('history'), closed.length
+      ? closed.map((t) => tripRow(t, students, places, true))
+      : h('div', { class: 'empty' }, 'No trips in the last 24 hours.'));
+
+    // send-out selects
+    const sel = $('sendout');
+    const outIds = new Set(open.map((t) => t.studentId));
+    replace(sel.studentId, h('option', { value: '' }, 'Student…'),
+      students.filter((s) => !outIds.has(s.id)).map((s) => h('option', { value: s.id }, s.name)));
+    replace(sel.placeId, h('option', { value: '' }, 'Place…'), places.map((p) => h('option', { value: p.id }, p.name)));
+
+    // students & places
+    replace($('students'), students.length
+      ? students.map((s) => h('div', { class: 'item' }, h('span', {}, s.name),
+          h('button', { class: 'btn ghost small', type: 'button', onclick: () => remove('students', s) }, 'Remove')))
+      : h('div', { class: 'empty' }, 'No students yet. Add them above.'));
+    replace($('places'), places.map((p) => h('div', { class: 'item' }, h('span', {}, p.name),
+      h('button', { class: 'btn ghost small', type: 'button', onclick: () => remove('places', p) }, 'Remove'))));
+
+    // settings
+    $('code').textContent = teacher.roomCode;
+    $('limit').alertMinutes.value = teacher.alertMinutes;
+    $('chime').checked = teacher.chime;
+    $('names-form').name.value = teacher.name;
+    $('names-form').roomName.value = teacher.roomName;
+
+    maybeChime(open, now);
+  }
+
+  function tripRow(t, students, places, withTime = false) {
+    const mins = Math.round((t.inAt - t.outAt) / 60000);
+    const late = mins >= state.teacher.alertMinutes;
+    return h('div', { class: 'item' },
+      h('span', {}, `${name(students, t.studentId)} → ${name(places, t.placeId, 'out')}`,
+        withTime ? h('span', { class: 'meta' }, `  ${clock(t.outAt)}–${clock(t.inAt)}`) : null),
+      h('span', { class: 'side' },
+        h('span', { class: 'meta' }, `${mins} min${late ? ' ⚠' : ''}`),
+        t.closedBy === 'teacher' ? h('span', { class: 'pill quiet' }, 'fixed by teacher') : null));
+  }
+
+  // tick the elapsed times and red state every second without a full refresh
+  setInterval(() => {
+    if (!state) return;
+    const now = Date.now();
+    for (const row of document.querySelectorAll('#out .item')) {
+      const t = state.trips.find((x) => x.id === row.dataset.trip);
+      if (!t) continue;
+      const late = isLate(t, now);
+      row.classList.toggle('late', late);
+      row.querySelector('.meta').textContent = elapsed(t.outAt, now) + (late ? ` · over ${state.teacher.alertMinutes} min` : '');
+    }
+    maybeChime(state.trips.filter((t) => t.inAt === null), now);
+  }, 1000);
+
+  function maybeChime(open, now) {
+    const newlyLate = open.filter((t) => isLate(t, now) && !chimedTrips.has(t.id));
+    if (!newlyLate.length) return;
+    for (const t of newlyLate) chimedTrips.add(t.id);
+    sessionStorage.setItem('chimed', JSON.stringify([...chimedTrips]));
+    if (state.teacher.chime) chime.play();
+    const who = newlyLate.map((t) => name(state.students, t.studentId)).join(', ');
+    $('chimed').textContent = `♪ ${who} over the limit · ${clock(now)}`;
+    $('chimed').hidden = false;
+    $('now-badge').classList.add('late');
+  }
+
+  // ---- actions ----
+  async function back(t) {
+    try { await api('POST', `/api/trips/${t.id}/checkin`); toast(`${name(state.students, t.studentId)} is back.`); refresh(); }
+    catch (err) { toast(err.message); refresh(); }
+  }
+  async function remove(kind, x) {
+    if (!confirm(`Remove ${x.name}?`)) return;
+    try { await api('DELETE', `/api/${kind}/${x.id}`); refresh(); }
+    catch (err) { toast(err.message); }
+  }
+  function onSubmit(id, fn) {
+    $(id).addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const form = e.target;
+      try { await fn(Object.fromEntries(new FormData(form)), form); refresh(); }
+      catch (err) { toast(err.message); }
+    });
+  }
+  onSubmit('sendout', async (b) => {
+    if (!b.studentId || !b.placeId) throw new Error('Pick a student and a place.');
+    await api('POST', '/api/trips', b);
+  });
+  onSubmit('add-student', async (b, form) => {
+    const names = b.name.split(/[\n,;]+/).map((s) => s.trim()).filter(Boolean);
+    for (const n of names) await api('POST', '/api/students', { name: n });
+    form.reset(); form.name.focus();
+  });
+  onSubmit('add-place', async (b, form) => { await api('POST', '/api/places', b); form.reset(); });
+  onSubmit('limit', async (b) => { await api('PATCH', '/api/settings', { alertMinutes: Number(b.alertMinutes) }); toast('Saved.'); });
+  onSubmit('names-form', async (b) => { await api('PATCH', '/api/settings', b); toast('Saved.'); });
+  $('chime').addEventListener('change', async (e) => {
+    try { await api('PATCH', '/api/settings', { chime: e.target.checked }); } catch (err) { toast(err.message); }
+  });
+  $('test-chime').onclick = () => chime.play();
+  $('new-code').onclick = async () => {
+    if (!confirm('Make a new room code? Any iPad already joined will need to type the new one.')) return;
+    try { await api('POST', '/api/settings/new-code'); refresh(); } catch (err) { toast(err.message); }
+  };
+  $('logout').onclick = async () => { await api('POST', '/api/logout'); location.replace('/'); };
+
+  live(refresh);
+</script>
+</body>
+</html>

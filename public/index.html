@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hall Pass</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="board">
+  <div class="hero">
+    <h1>Hall Pass</h1>
+    <p>Who's out, where they went, and when they're back.</p>
+  </div>
+
+  <div class="landing">
+    <section class="card">
+      <h2>I'm the teacher</h2>
+      <p class="hint">Sign in on your own device to see the board.</p>
+      <div class="tabs">
+        <button type="button" class="active" data-tab="login">Sign in</button>
+        <button type="button" data-tab="signup">Create account</button>
+      </div>
+
+      <form id="login">
+        <div class="field"><label>Email</label><input class="input" name="email" type="email" autocomplete="email" required></div>
+        <div class="field"><label>Password</label><input class="input" name="password" type="password" autocomplete="current-password" required></div>
+        <div class="error" id="login-error"></div>
+        <button class="btn solid" type="submit">Sign in</button>
+      </form>
+
+      <form id="signup" hidden>
+        <div class="field"><label>Your name (how students see it)</label><input class="input" name="name" placeholder="Ms. Carter" required></div>
+        <div class="field"><label>Room name</label><input class="input" name="roomName" placeholder="Room 14" required></div>
+        <div class="field"><label>Email</label><input class="input" name="email" type="email" autocomplete="email" required></div>
+        <div class="field"><label>Password (8+ characters)</label><input class="input" name="password" type="password" autocomplete="new-password" minlength="8" required></div>
+        <div class="error" id="signup-error"></div>
+        <button class="btn solid" type="submit">Create my room</button>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>This is the classroom iPad</h2>
+      <p class="hint">Type the 6-letter room code from the teacher's Settings page. You only do this once.</p>
+      <form id="join">
+        <div class="field"><input class="input code" name="code" maxlength="6" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="ABCDEF" required></div>
+        <div class="error" id="join-error"></div>
+        <button class="btn sticky big" type="submit">Join room</button>
+      </form>
+    </section>
+  </div>
+
+  <div class="foot"><span>Made in class, not by a template.</span><span>v0.1</span></div>
+</div>
+
+<script type="module">
+  import { api } from '/common.js';
+
+  // Already signed in on this device? Go straight to the right screen.
+  api('GET', '/api/me').then(() => location.replace('/teacher.html')).catch(() => {});
+  api('GET', '/api/kiosk/state').then(() => location.replace('/kiosk.html')).catch(() => {});
+
+  for (const b of document.querySelectorAll('.tabs button')) {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('.tabs button').forEach((x) => x.classList.toggle('active', x === b));
+      document.getElementById('login').hidden = b.dataset.tab !== 'login';
+      document.getElementById('signup').hidden = b.dataset.tab !== 'signup';
+    });
+  }
+
+  function wire(formId, path, next) {
+    const form = document.getElementById(formId);
+    const err = document.getElementById(formId + '-error');
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      err.textContent = '';
+      const body = Object.fromEntries(new FormData(form));
+      try {
+        await api('POST', path, body);
+        location.href = next;
+      } catch (ex) {
+        err.textContent = ex.message;
+      }
+    });
+  }
+  wire('login', '/api/login', '/teacher.html');
+  wire('signup', '/api/signup', '/teacher.html');
+  wire('join', '/api/kiosk/join', '/kiosk.html');
+</script>
+</body>
+</html>
