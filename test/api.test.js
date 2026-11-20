@@ -177,6 +177,23 @@ test('removing a student who is out is refused; removing one who is in works', a
   assert.deepEqual(s.json.students.map((x) => x.name), ['Grace']);
 });
 
+test('leaving the room from the iPad needs the teacher password', async () => {
+  assert.equal((await ipad('GET', '/api/kiosk/state')).status, 200);
+  const none = await ipad('POST', '/api/kiosk/leave', {});
+  assert.equal(none.status, 401);
+  const wrong = await ipad('POST', '/api/kiosk/leave', { password: 'guess123' });
+  assert.equal(wrong.status, 401);
+  assert.equal((await ipad('GET', '/api/kiosk/state')).status, 200, 'still joined after a wrong guess');
+
+  const ok = await ipad('POST', '/api/kiosk/leave', { password: 'pencils123' });
+  assert.equal(ok.status, 200, ok.text);
+  assert.equal((await ipad('GET', '/api/kiosk/state')).status, 401, 'kicked off after the right password');
+
+  // rejoin so later tests still have an iPad
+  const { json: { teacher: t } } = await teacher('GET', '/api/state');
+  assert.equal((await ipad('POST', '/api/kiosk/join', { code: t.roomCode })).status, 200);
+});
+
 test('logout then login works and data survived', async () => {
   assert.equal((await teacher('POST', '/api/logout')).status, 200);
   assert.equal((await teacher('GET', '/api/state')).status, 401);

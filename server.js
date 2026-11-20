@@ -207,7 +207,11 @@ export function createApp({ dataFile }) {
     res.json({ roomName: teacher.roomName, teacherName: teacher.name });
   });
 
-  app.post('/api/kiosk/leave', (req, res) => {
+  // Students will absolutely press this button, so it needs the teacher's password.
+  app.post('/api/kiosk/leave', requireKiosk, (req, res) => {
+    if (!checkPassword(req.teacher, String(req.body?.password ?? ''))) {
+      return fail(res, 401, "That's not the teacher's password.");
+    }
     const token = cookies(req).ksess;
     db.sessions = db.sessions.filter((s) => s.token !== token);
     save();
