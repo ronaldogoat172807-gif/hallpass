@@ -7,6 +7,8 @@ import {
   checkOut, checkIn, openTrips, makeRoomCode, newId, HttpError,
 } from './lib/logic.js';
 
+import { CURRENT, UPDATES, unseenUpdates, isKnownVersion } from './lib/updates.js';
+
 const here = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_PLACES = ['Bathroom', 'Water', 'Nurse', 'Library', 'Office'];
 const DAY = 24 * 60 * 60 * 1000;
@@ -124,6 +126,7 @@ export function createApp({ dataFile, store = openStore(dataFile) }) {
     const teacher = {
       id: newId(), name, roomName, email, salt, passHash: hash,
       roomCode: uniqueRoomCode(), alertMinutes: 8, chime: true, createdAt: Date.now(),
+      seenUpdate: CURRENT, // a brand-new account has nothing to catch up on
     };
     db.teachers.push(teacher);
     for (const p of DEFAULT_PLACES) db.places.push({ id: newId(), teacherId: teacher.id, name: p });
@@ -160,9 +163,14 @@ export function createApp({ dataFile, store = openStore(dataFile) }) {
       students: db.students.filter((s) => s.teacherId === t.id),
       places: db.places.filter((p) => p.teacherId === t.id),
       trips: db.trips.filter((x) => x.teacherId === t.id && (x.inAt === null || x.outAt >= since)),
+      version: CURRENT,
+      updates: unseenUpdates(t.seenUpdate),
       now: Date.now(),
     });
   });
+
+  // every update's notes, for the "See what's new" button in Settings
+  app.get('/api/updates', requireTeacher, (req, res) => res.json({ version: CURRENT, updates: UPDATES }));
 
   app.post('/api/students', requireTeacher, (req, res) => {
     const name = str(req.body.name);
@@ -214,6 +222,10 @@ export function createApp({ dataFile, store = openStore(dataFile) }) {
       const v = str(b.exitCode);
       if (v && !/^[A-Za-z0-9]{4,12}$/.test(v)) return fail(res, 400, 'Exit code must be 4 to 12 letters or numbers (or empty to turn it off).');
       t.exitCode = v;
+    }
+    if ('seenUpdate' in b) {
+      if (!isKnownVersion(b.seenUpdate)) return fail(res, 400, 'That is not an update number.');
+      t.seenUpdate = b.seenUpdate;
     }
     if ('roomName' in b) { const v = str(b.roomName); if (!v) return fail(res, 400, 'Room name cannot be empty.'); t.roomName = v; }
     if ('name' in b) { const v = str(b.name); if (!v) return fail(res, 400, 'Name cannot be empty.'); t.name = v; }

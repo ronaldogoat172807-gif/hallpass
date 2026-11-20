@@ -154,6 +154,19 @@ a.btn { text-decoration: none; display: inline-block; }
 .sheet .sub { color: var(--chalk-dim); margin-bottom: 18px; font-size: 1.05rem; }
 .sheet .actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 18px; }
 
+/* What's new slides */
+.slides { min-height: 300px; display: flex; flex-direction: column; }
+.slides .sub { margin-bottom: 10px; text-transform: uppercase; letter-spacing: .08em; font-size: .85rem; }
+.slides .slide-text { font-size: 1.15rem; line-height: 1.5; margin: 8px auto 0; max-width: 44ch; flex: 1; text-wrap: pretty; }
+.dots { display: flex; gap: 8px; justify-content: center; margin-top: 18px; }
+.dots span { width: 9px; height: 9px; border-radius: 50%; background: var(--chalk-faint); }
+.dots span.on { background: var(--sticky); }
+.skip { background: none; border: none; color: var(--chalk-dim); margin-top: 12px; text-decoration: underline; font-size: .95rem; }
+.version {
+  display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+  margin-top: 28px; padding-top: 14px; border-top: 2px dashed var(--chalk-faint); color: var(--chalk-dim);
+}
+
 /* Teacher dashboard layout */
 .dash { display: flex; gap: 20px; flex: 1; min-height: 0; }
 .nav { display: flex; flex-direction: column; gap: 2px; min-width: 130px; border-right: 2px dashed var(--chalk-faint); padding-right: 12px; }

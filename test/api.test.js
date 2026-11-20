@@ -216,6 +216,24 @@ test('an exit code lets the iPad leave without the teacher password', async () =
   assert.equal((await ipad('POST', '/api/kiosk/leave', { password: '1234' })).status, 401, 'cleared code no longer works');
 });
 
+test('update notes: a new account has nothing to catch up on, an older one sees the slides once', async () => {
+  const fresh = (await teacher('GET', '/api/state')).json;
+  assert.match(fresh.version, /^\d+\.\d+$/);
+  assert.deepEqual(fresh.updates, [], 'signed up on the current update');
+
+  // pretend this account last looked during the very first version
+  assert.equal((await teacher('PATCH', '/api/settings', { seenUpdate: 'banana' })).status, 400);
+  assert.equal((await teacher('PATCH', '/api/settings', { seenUpdate: '0.1' })).status, 200);
+  const old = (await teacher('GET', '/api/state')).json;
+  assert.ok(old.updates.length > 0);
+  assert.equal(old.updates[0].version, old.version);
+  assert.ok(old.updates[0].slides[0].title);
+
+  assert.equal((await teacher('PATCH', '/api/settings', { seenUpdate: old.version })).status, 200);
+  assert.deepEqual((await teacher('GET', '/api/state')).json.updates, [], 'not shown again');
+  assert.ok(!('updates' in (await ipad('GET', '/api/kiosk/state')).json), 'students never get the slideshow');
+});
+
 test('logout then login works and data survived', async () => {
   assert.equal((await teacher('POST', '/api/logout')).status, 200);
   assert.equal((await teacher('GET', '/api/state')).status, 401);

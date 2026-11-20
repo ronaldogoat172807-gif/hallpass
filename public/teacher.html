@@ -105,7 +105,27 @@
         <div class="field"><label>Room name</label><input class="input" name="roomName" required></div>
         <button class="btn" type="submit">Save names</button>
       </form>
+
+      <div class="version">
+        <span id="version">Update …</span>
+        <button class="btn ghost small" id="whats-new" type="button">See what's new</button>
+      </div>
     </section>
+  </div>
+</div>
+
+<!-- What's new: a few slides shown once after each update -->
+<div class="sheet-back" id="news" hidden>
+  <div class="sheet slides" role="dialog" aria-modal="true" aria-labelledby="news-title">
+    <div class="sub" id="news-kicker"></div>
+    <h2 id="news-title"></h2>
+    <p class="slide-text" id="news-text"></p>
+    <div class="dots" id="news-dots"></div>
+    <div class="actions">
+      <button class="btn ghost" id="news-back" type="button">Back</button>
+      <button class="btn sticky" id="news-next" type="button">Next</button>
+    </div>
+    <button class="skip" id="news-skip" type="button">Skip</button>
   </div>
 </div>
 
@@ -117,6 +137,7 @@
   document.addEventListener('pointerdown', () => chime.unlock(), { once: true });
 
   let state = null;
+  let newsOffered = false; // the what's-new slides are offered once per visit
   const chimedTrips = new Set(JSON.parse(sessionStorage.getItem('chimed') || '[]'));
 
   // ---- tabs ----
@@ -131,6 +152,7 @@
     try { state = await api('GET', '/api/state'); }
     catch (err) { if (err.status === 401) location.replace('/?as=teacher'); return; }
     if (changed('teacher', state)) render();
+    if (!newsOffered) { newsOffered = true; if (state.updates.length) showNews(state.updates); }
   }
 
   const name = (list, id, fallback = '?') => list.find((x) => x.id === id)?.name ?? fallback;
@@ -190,6 +212,7 @@
     if (document.activeElement !== $('exit-form').exitCode) $('exit-form').exitCode.value = teacher.exitCode;
     $('names-form').name.value = teacher.name;
     $('names-form').roomName.value = teacher.roomName;
+    $('version').textContent = `Update ${state.version}`;
 
     maybeChime(open, now);
   }
@@ -271,6 +294,51 @@
     try { await api('POST', '/api/settings/new-code'); refresh(); } catch (err) { toast(err.message); }
   };
   $('logout').onclick = async () => { await api('POST', '/api/logout'); location.replace('/?as=teacher'); };
+
+  // ---- what's new slideshow ----
+  let slides = [], slideAt = 0;
+  function showNews(updates) {
+    slides = updates.flatMap((u) => u.slides.map((s) => ({ ...s, version: u.version })));
+    if (!slides.length) return;
+    slideAt = 0;
+    drawSlide();
+    $('news').hidden = false;
+    $('news-next').focus();
+  }
+  function drawSlide() {
+    const s = slides[slideAt], last = slideAt === slides.length - 1;
+    $('news-kicker').textContent = `New in update ${s.version}`;
+    $('news-title').textContent = s.title;
+    $('news-text').textContent = s.text;
+    replace($('news-dots'), slides.map((_, i) => h('span', { class: i === slideAt ? 'on' : '' })));
+    $('news-back').style.visibility = slideAt === 0 ? 'hidden' : 'visible';
+    $('news-next').textContent = last ? 'Got it' : 'Next';
+    $('news-skip').hidden = last;
+  }
+  async function closeNews() {
+    $('news').hidden = true;
+    // remember it on the account, so it stays seen on every device
+    if (state.updates.length) {
+      try { await api('PATCH', '/api/settings', { seenUpdate: state.version }); } catch { /* shows again next visit */ }
+    }
+  }
+  function step(by) {
+    if (slideAt + by >= slides.length) return closeNews();
+    slideAt = Math.max(0, slideAt + by);
+    drawSlide();
+  }
+  $('news-next').onclick = () => step(1);
+  $('news-back').onclick = () => step(-1);
+  $('news-skip').onclick = closeNews;
+  document.addEventListener('keydown', (e) => {
+    if ($('news').hidden) return;
+    if (e.key === 'ArrowRight') step(1);
+    else if (e.key === 'ArrowLeft') step(-1);
+    else if (e.key === 'Escape') closeNews();
+  });
+  $('whats-new').onclick = async () => {
+    try { showNews((await api('GET', '/api/updates')).updates); } catch (err) { toast(err.message); }
+  };
 
   live(refresh);
 </script>
