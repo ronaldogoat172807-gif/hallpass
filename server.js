@@ -2,7 +2,7 @@ import express from 'express';
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { openStore } from './lib/store.js';
+import { openStore, openRedisStore } from './lib/store.js';
 import {
   checkOut, checkIn, openTrips, makeRoomCode, newId, HttpError,
 } from './lib/logic.js';
@@ -11,11 +11,36 @@ const here = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_PLACES = ['Bathroom', 'Water', 'Nurse', 'Library', 'Office'];
 const DAY = 24 * 60 * 60 * 1000;
 
-export function createApp({ dataFile }) {
-  const { db, save } = openStore(dataFile);
+export function createApp({ dataFile, store = openStore(dataFile) }) {
+  const { db, save } = store;
   const app = express();
   app.use(express.json());
   app.use(express.static(join(here, 'public')));
+
+  // Hosted store: read the latest data before each request and write changes back before
+  // the reply is sent. Requests take turns so two of them can't overwrite each other.
+  if (store.remote) {
+    let turn = Promise.resolve();
+    app.use('/api', (req, res, next) => {
+      const mine = turn.then(async () => {
+        await store.load();
+        await new Promise((done) => {
+          const json = res.json.bind(res);
+          res.json = (body) => {
+            store.flush().then(() => json(body), () => {
+              res.status(503);
+              json({ error: 'Could not save that. Try again in a moment.' });
+            });
+            return res;
+          };
+          res.once('close', done);
+          next();
+        });
+      });
+      turn = mine.catch(() => {});
+      mine.catch(next);
+    });
+  }
 
   // ---- live updates (Server-Sent Events) -------------------------------
   const listeners = new Map(); // teacherId -> Set<res>
@@ -269,6 +294,9 @@ export function createApp({ dataFile }) {
   });
 
   app.get('/api/events', requireAnyone, (req, res) => {
+    // A hosted copy of the server can't hold a stream open or tell the other copies about
+    // a change. 204 tells the browser to stop asking; the screens re-check on a timer.
+    if (store.remote) return res.status(204).end();
     res.set({
       'content-type': 'text/event-stream',
       'cache-control': 'no-cache',
@@ -302,6 +330,18 @@ export function createApp({ dataFile }) {
 
 function str(v) { return typeof v === 'string' ? v.trim() : ''; }
 function fail(res, status, error) { return res.status(status).json({ error }); }
+
+// On Vercel: the app is the default export and data lives in Upstash Redis. The database
+// integration adds the address and token as environment variables under one of these names.
+const env = process.env;
+export default env.VERCEL
+  ? createApp({
+    store: openRedisStore({
+      url: env.KV_REST_API_URL || env.UPSTASH_REDIS_REST_URL,
+      token: env.KV_REST_API_TOKEN || env.UPSTASH_REDIS_REST_TOKEN,
+    }),
+  })
+  : null;
 
 // Run directly: `node server.js`
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {

@@ -110,7 +110,7 @@
 </div>
 
 <script type="module">
-  import { api, live, elapsed, clock, tickClock, h, replace, toast, chime } from '/common.js';
+  import { api, live, changed, elapsed, clock, tickClock, h, replace, toast, chime } from '/common.js';
 
   const $ = (id) => document.getElementById(id);
   tickClock($('clock'));
@@ -130,7 +130,7 @@
   async function refresh() {
     try { state = await api('GET', '/api/state'); }
     catch (err) { if (err.status === 401) location.replace('/?as=teacher'); return; }
-    render();
+    if (changed('teacher', state)) render();
   }
 
   const name = (list, id, fallback = '?') => list.find((x) => x.id === id)?.name ?? fallback;

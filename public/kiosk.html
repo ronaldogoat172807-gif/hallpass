@@ -65,7 +65,7 @@
 </div>
 
 <script type="module">
-  import { api, live, elapsed, minutes, tickClock, h, replace, toast } from '/common.js';
+  import { api, live, changed, elapsed, minutes, tickClock, h, replace, toast } from '/common.js';
 
   const $ = (id) => document.getElementById(id);
   tickClock($('clock'));
@@ -81,7 +81,7 @@
       if (err.status === 401) location.replace('/?as=ipad');
       return;
     }
-    render();
+    if (changed('kiosk', state)) render();
   }
 
   function render() {

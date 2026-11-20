@@ -28,13 +28,25 @@ export function landingTarget({ teacher, kiosk, as }) {
   return null;
 }
 
-// Call onChange now, whenever the server says something changed, and every 30s as a fallback.
+// Call onChange now, whenever the server says something changed, and every 5s as a fallback
+// (when the site is hosted there is no live stream, so the timer is what keeps screens fresh).
 export function live(onChange) {
   const es = new EventSource('/api/events');
   es.addEventListener('changed', onChange);
-  setInterval(onChange, 30000);
+  setInterval(onChange, 5000);
   onChange();
   return es;
+}
+
+// True when the server's answer differs from the last one seen under this name (ignoring its
+// clock). Screens use it to skip redrawing, so a routine re-check never wipes a half-typed
+// box or a half-made choice.
+const lastSeen = new Map();
+export function changed(name, state) {
+  const sig = JSON.stringify({ ...state, now: 0 });
+  if (lastSeen.get(name) === sig) return false;
+  lastSeen.set(name, sig);
+  return true;
 }
 
 export function pad(n) { return String(n).padStart(2, '0'); }

@@ -53,8 +53,14 @@ npm test
 - Live updates use Server-Sent Events, so both screens update the instant anything changes.
 - Design notes: `docs/superpowers/specs/2026-11-13-hallpass-design.md`.
 
-## Putting it online
+## Putting it online (Vercel)
 
-Not done yet. It needs a host that runs Node and keeps a file on disk
-(Render, Railway and Fly all have free or near-free tiers). Set `PORT` and
-`DATA_FILE` as environment variables if the host asks for them.
+The repo deploys to Vercel as it is: import it as a project and deploy.
+
+Vercel has no disk, so there the data lives in an Upstash Redis database instead of
+`data/db.json`. In the Vercel dashboard open **Storage**, create an **Upstash for Redis**
+database (the free plan is enough), connect it to this project, then redeploy. The app
+reads `KV_REST_API_URL` and `KV_REST_API_TOKEN` (or `UPSTASH_REDIS_REST_URL` and
+`UPSTASH_REDIS_REST_TOKEN`), which the integration adds for you.
+
+Hosted screens re-check every 5 seconds instead of updating instantly.

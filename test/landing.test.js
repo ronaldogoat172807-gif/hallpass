@@ -32,3 +32,11 @@ test('a screen that lost its sign-in asks for that same sign-in again, never the
   // with only an iPad sign-in left, the old teacher tab stays on the sign-in page
   assert.equal(landingTarget({ teacher: false, kiosk: true, as: 'teacher' }), null);
 });
+
+test('changed() is true only when the data differs, ignoring the server clock', async () => {
+  const { changed } = await import('../public/common.js');
+  assert.equal(changed('t', { students: ['a'], now: 1 }), true, 'first look');
+  assert.equal(changed('t', { students: ['a'], now: 2 }), false, 'same data, later clock');
+  assert.equal(changed('t', { students: ['a', 'b'], now: 3 }), true, 'new student');
+  assert.equal(changed('other', { students: ['a', 'b'], now: 3 }), true, 'each screen tracks its own');
+});
